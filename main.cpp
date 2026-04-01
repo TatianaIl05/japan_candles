@@ -71,6 +71,21 @@ TEST(CandleTest, BodySizeZero) {
   ASSERT_EQ(candle.body_size(), 0);
 }
 
+TEST(CandleTest, IsRedTrue) {
+  Candle candle{19.0, 2.0, 5.0, 6.0};
+  ASSERT_EQ(candle.is_red(), true);
+}
+
+TEST(CandleTest, IsRedFalse) {
+  Candle candle{1.0, 2.0, 5.0, 6.0};
+  ASSERT_EQ(candle.is_red(), false);
+}
+
+TEST(CandleTest, IsRedFalseLimit) {
+  Candle candle{6.0, 2.0, 5.0, 6.0};
+  ASSERT_EQ(candle.is_red(), false);
+}
+
 //массив всех тестов, который мы заполняем в функции initTests
 static std::vector<std::function<bool()>> tests;
 
