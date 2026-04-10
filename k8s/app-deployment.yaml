@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: app
-        image: tatianail05/repo-app:latest
+        image: tatianail05/test-repo-app:latest
         imagePullPolicy: Always
         command: ["/bin/sh"]
         args: ["-c", "./build/testproj && sleep 3600"]

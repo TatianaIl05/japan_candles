@@ -15,6 +15,6 @@ spec:
       serviceAccountName: web-sa
       containers:
       - name: web
-        image: tatianail05/repo-web:latest
+        image: tatianail05/test-repo-web:latest
         ports:
         - containerPort: 80
