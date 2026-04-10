@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-repo-app
+  labels:
+    app: test-repo-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test-repo-app
+  template:
+    metadata:
+      labels:
+        app: test-repo-app
+    spec:
+      containers:
+      - name: app
+        image: tatianail05/repo-app:latest
+        imagePullPolicy: Always
+        command: ["/bin/sh"]
+        args: ["-c", "./build/testproj && sleep 3600"]
