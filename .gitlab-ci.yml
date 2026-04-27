@@ -1,0 +1,157 @@
+stages:
+  - build
+  - test
+  - publish
+  - deploy
+  - pages
+
+variables:
+  APP_IMAGE: $DOCKERHUB_USERNAME/test-repo-app
+  WEB_IMAGE: $DOCKERHUB_USERNAME/test-repo-web
+  HELM_RELEASE_NAME: test-release
+  DOCKER_HOST: ""
+
+build_app:
+  stage: build
+  image: docker:20.10
+  tags:
+    - docker
+  script:
+    - docker login -u $DOCKERHUB_USERNAME -p $DOCKERHUB_PASSWORD
+    - docker build --no-cache -t $APP_IMAGE:$CI_COMMIT_TAG -f Dockerfile.app .
+    - docker build -t $WEB_IMAGE:$CI_COMMIT_TAG -f Dockerfile.web .
+    # Save the image as an artifact for test job
+    - docker save $APP_IMAGE:$CI_COMMIT_TAG -o app-image.tar
+  artifacts:
+    paths:
+      - app-image.tar
+    expire_in: 1 hour
+  only:
+    - tags
+
+test_app:
+  stage: test
+  tags:
+    - docker
+  script:
+    - docker load -i app-image.tar
+    - docker run --rm $APP_IMAGE:$CI_COMMIT_TAG /app/build/testproj 2>&1 | tee test-output.txt
+  artifacts:
+    paths:
+      - test-output.txt
+    expire_in: 1 week
+  only:
+    - tags
+  needs:
+    - build_app
+
+publish_images:
+  stage: publish
+  image: docker:20.10
+  tags:
+    - docker
+  script:
+    - docker login -u $DOCKERHUB_USERNAME -p $DOCKERHUB_PASSWORD
+    - docker push $APP_IMAGE:$CI_COMMIT_TAG
+    - docker push $WEB_IMAGE:$CI_COMMIT_TAG
+  only:
+    - tags
+  needs:
+    - test_app  # Only publish if tests pass
+
+publish_helm:
+  stage: pages
+  image: 
+    name: alpine/helm:3.10.0
+    entrypoint: [""]
+  tags:
+    - docker
+  script:
+    - mkdir -p public/helm
+    - helm package helm/test-repo-chart --version $CI_COMMIT_TAG
+    - mv *.tgz public/helm/
+    - cd public/helm
+    - helm repo index . --url https://$CI_PROJECT_PATH_SLUG.gitlab.io/helm
+    - chmod 644 *.tgz  # Add read permissions
+    - chmod 644 index.yaml
+    - cd ../..
+    - ls -la public/helm/  # Verify both files exist
+  artifacts:
+    paths:
+      - public
+    expire_in: never
+  only:
+    - tags
+
+deploy_k8s:
+  stage: deploy
+  image: 
+    name: alpine:latest  # Need an image with bash/curl
+    entrypoint: [""]
+  tags:
+    - docker
+  before_script:
+    - apk add --no-cache curl kubectl helm  # Install all tools
+  script:
+    - echo "$KUBE_CONFIG" | base64 -d > kubeconfig.yaml
+    - export KUBECONFIG=kubeconfig.yaml
+    - |
+      helm upgrade --install $HELM_RELEASE_NAME ./helm/test-repo-chart \
+        --set app.image=$APP_IMAGE:$CI_COMMIT_TAG \
+        --set web.image=$WEB_IMAGE:$CI_COMMIT_TAG \
+        --namespace default --create-namespace
+  only:
+    - tags
+
+pages:
+  stage: pages
+  image: 
+    name: alpine/helm:3.10.0
+    entrypoint: [""]
+  tags:
+    - docker
+  needs:
+    - test_app
+  script:
+    # Create Helm repository
+    - mkdir -p public/helm
+    - helm package helm/test-repo-chart --version $CI_COMMIT_TAG
+    - mv *.tgz public/helm/
+    - cd public/helm
+    - helm repo index . --url https://$CI_PROJECT_PATH_SLUG.gitlab.io/$CI_PROJECT_NAME/helm
+    - cd ../..
+    
+    # Create index.html with test results
+    - |
+      cat > public/index.html << 'EOF'
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Test Results - $CI_COMMIT_TAG</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 40px; }
+          pre { background: #f0f0f0; padding: 10px; border-radius: 5px; }
+        </style>
+      </head>
+      <body>
+        <h1>C++ Test Results</h1>
+        <pre>
+      EOF
+    
+    - cat test-output.txt >> public/index.html
+    
+    - |
+      cat >> public/index.html << 'EOF'
+        </pre>
+        <hr>
+        <p>Helm repository: <a href="helm/">/helm</a></p>
+      </body>
+      </html>
+      EOF
+    
+  artifacts:
+    paths:
+      - public
+    expire_in: never
+  only:
+    - tags
